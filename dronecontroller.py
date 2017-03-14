@@ -32,6 +32,10 @@ GROUNDED_SPEED = 10
 VICON_SERVER_SOCKET = "tcp://*:5555"
 UNITY_SERVER_SOCKET = "tcp://*:5556"
 
+drone_x = 0.0
+drone_y = 0.0
+drone_z = 0.0
+
 
 class ViconServerThread(minidrone.StoppableThread):
     def __init__(self, context, process, feedback, cleanup):
@@ -46,20 +50,21 @@ class ViconServerThread(minidrone.StoppableThread):
         socket.bind(VICON_SERVER_SOCKET)
         while True:
             if not self.stop_event.is_set():
-                control_message = socket.recv()
-                control_message_json = json.loads(control_message)
+                # control_message = socket.recv()
+
+                # control_message_json = json.loads(control_message)
                 # noinspection PyBroadException
                 try:
-                    translation_json = control_message_json["translation"]
-                    translation = (translation_json['x'],
-                                   translation_json['y'],
-                                   translation_json['z'])
-                    rotation_json = control_message_json["rotation"]
-                    rotation = (rotation_json['w'],
-                                rotation_json['x'],
-                                rotation_json['y'],
-                                rotation_json['z'])
-                    reset = control_message["reset"] == 1
+                    # translation_json = control_message_json["translation"]
+                    translation = (drone_x,
+                                   drone_y,
+                                   drone_z)
+                    # rotation_json = control_message_json["rotation"]
+                    rotation = (0.0,
+                                0.0,
+                                1.0,
+                                0.0)
+                    reset = False
                     self.process(translation, rotation, reset)
                 except:
                     self.cleanup()
@@ -191,11 +196,13 @@ class ControllerThread(minidrone.StoppableThread):
         self.new_changes.release()
 
     def make_decision(self):
+        global drone_x, drone_z, drone_y
         now = time.time()
         if self.failed:
             return
         if self.state == S_DISCONNECTED:
-            self.drone.connect()
+            # self.drone.connect()
+            self.state = S_CONNECTED
         if now - self.last_drone_update > DRONE_TIMEOUT:
             self.halt()
             return
@@ -203,7 +210,7 @@ class ControllerThread(minidrone.StoppableThread):
             self.halt()
             return
         if self.state == S_CONNECTED:
-            if self.speed < GROUNDED_SPEED:
+            if False:
                 if now - self.lifted_time > LIFT_DELAY:
                     self.drone.takeoff()
 
@@ -214,16 +221,19 @@ class ControllerThread(minidrone.StoppableThread):
                     self.failed = True
                 else:
                     hor_lr = hor_fb = vertical = 0
-                    rotation_factor = -1
-                    horizontal_factor = -1
-                    vertical_factor = -1
+                    rotation_factor = 0.1
+                    horizontal_factor = 0.1
+                    vertical_factor = 0.1
                     rotation = rotation_factor * (self.target_rotation[0] - self.drone_rotation[0])
                     if angle < ROTATION_HALT:
                         hor_lr = horizontal_factor * (self.target_translation[0] - self.drone_translation[0])
                         hor_fb = horizontal_factor * (self.target_translation[2] - self.drone_translation[2])
                         vertical = vertical_factor * (self.target_translation[1] - self.drone_translation[1])
                     print((hor_lr, hor_fb, rotation, vertical))
-                    self.drone.send_joy(hor_lr, hor_fb, rotation, vertical)
+                    # self.drone.send_joy(hor_lr, hor_fb, rotation, vertical)
+                    drone_x += 0.01 * hor_lr
+                    drone_z += 0.01 * hor_fb
+                    drone_y += 0.01 * vertical
 
     def run(self):
         self.viconServerThread.start()
