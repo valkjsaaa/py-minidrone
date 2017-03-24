@@ -121,6 +121,7 @@ class ControllerThread(minidrone.StoppableThread):
     def __init__(self):
         minidrone.StoppableThread.__init__(self)
         self.zmqContext = zmq.Context()
+        self.new_changes = threading.Semaphore(0)
         self.viconServerThread = \
             ViconServerThread(self.zmqContext, self.receive_vicon_data, self.status_report, self.halt)
         self.unityServerThread = \
@@ -129,7 +130,6 @@ class ControllerThread(minidrone.StoppableThread):
         self.state = S_DISCONNECTED
         self.message = self.speed = self.battery = ''
         self.config = dict()
-        self.new_changes = threading.Semaphore(0)
         self.drone_translation = (0, 0, 0)
         self.drone_rotation = (0, 1, 0, 0)
         self.target_translation = (0, 0, 0)
