@@ -35,7 +35,7 @@ UNITY_SERVER_SOCKET = "tcp://*:5556"
 
 class ViconServerThread(minidrone.StoppableThread):
     def __init__(self, context, process, feedback, cleanup):
-        super().__init__()
+        minidrone.StoppableThread.__init__(self)
         self.context = context
         self.process = process
         self.feedback = feedback
@@ -73,7 +73,7 @@ class ViconServerThread(minidrone.StoppableThread):
 
 class UnityServerThread(minidrone.StoppableThread):
     def __init__(self, context, process, feedback, cleanup):
-        super().__init__()
+        minidrone.StoppableThread.__init__(self)
         self.context = context
         self.process = process
         self.feedback = feedback
@@ -119,7 +119,7 @@ def angluar_difference(quad1, quad2):
 
 class ControllerThread(minidrone.StoppableThread):
     def __init__(self):
-        super().__init__()
+        minidrone.StoppableThread.__init__(self)
         self.zmqContext = zmq.Context()
         self.viconServerThread = \
             ViconServerThread(self.zmqContext, self.receive_vicon_data, self.status_report, self.halt)
@@ -230,7 +230,10 @@ class ControllerThread(minidrone.StoppableThread):
         self.drone.connect()
         while True:
             if not self.stop_event.is_set():
-                self.new_changes.acquire(blocking=True, timeout=LOOP_TIMEOUT)
+                current_time = time.clock()
+                while time.clock() - current_time < LOOP_TIMEOUT:
+                    if self.new_changes.acquire(blocking=False):
+                        break
                 self.make_decision()
 
             else:
