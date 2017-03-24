@@ -47,7 +47,7 @@ class ViconServerThread(minidrone.StoppableThread):
         while True:
             if not self.stop_event.is_set():
                 control_message = socket.recv()
-                control_message_json = json.loads(control_message)
+                control_message_json = json.loads(str(control_message))
                 # noinspection PyBroadException
                 try:
                     translation_json = control_message_json["translation"]
@@ -59,7 +59,7 @@ class ViconServerThread(minidrone.StoppableThread):
                                 rotation_json['x'],
                                 rotation_json['y'],
                                 rotation_json['z'])
-                    reset = control_message["reset"] == 1
+                    reset = control_message_json['reset'] == 1
                     self.process(translation, rotation, reset)
                 except:
                     self.cleanup()
