@@ -142,7 +142,8 @@ class ControllerThread(minidrone.StoppableThread):
             UnityServerThread(self.zmqContext, self.receive_unity_data, self.status_report, self.halt)
         self.drone = minidrone.MiniDrone(mac=DRONE_MAC, callback=self.receive_drone_data)
         self.state = S_DISCONNECTED
-        self.message = self.speed = self.battery = ''
+        self.message = self.battery = ''
+        self.speed = 0
         self.config = dict()
         self.drone_translation = (0, 0, 0)
         self.drone_rotation = (0, 1, 0, 0)
@@ -178,7 +179,7 @@ class ControllerThread(minidrone.StoppableThread):
             mutex.release()
         elif t == CB_SPEED:
             mutex.acquire()
-            self.speed = data
+            self.speed = int(data)
             mutex.release()
         elif t == CB_DATA_UPDATE:
             mutex.acquire()
