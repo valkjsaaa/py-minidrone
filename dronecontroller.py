@@ -102,7 +102,11 @@ class UnityServerThread(minidrone.StoppableThread):
                                 rotation_json['x'],
                                 rotation_json['y'],
                                 rotation_json['z'])
-                    self.process(translation, rotation)
+                    state_json = control_message_json['state']
+                    state = {
+                        'takeoff': state_json['takeoff']
+                    }
+                    self.process(translation, rotation, state)
                 except:
                     self.cleanup()
                 feedback_message = self.feedback()
@@ -150,14 +154,16 @@ class ControllerThread(minidrone.StoppableThread):
         self.speed = 0
         self.config = dict()
         self.drone_translation = (0, 0, 0)
-        self.drone_rotation = (0, 1, 0, 0)
-        self.target_translation = (0, 0, 0)
-        self.target_rotation = (0, 1, 0, 0)
+        self.drone_rotation = (0, 0, 0, 1)
         self.drone_tracking = False
+        self.target_translation = (0.0, 1.5, 0.0)
+        self.target_rotation = (0, 0, 0, 1)
+        self.target_takeoff = True
         self.last_drone_update = time.time()
         self.last_vicon_update = time.time()
         self.lifted_time = 0
         self.failed = False
+        self.took_off = False
         self.pid_lr = PID(p=100.0, i=30.0, d=10.0)
         self.pid_fb = PID(p=100.0, i=30.0, d=10.0)
         self.pid_vertical = PID(p=30.0, i=10.0, d=5.0)
@@ -174,9 +180,11 @@ class ControllerThread(minidrone.StoppableThread):
 
     def status_report(self):
         mutex.acquire()
-        # TODO: status report
+        status = {
+            "battery": self.battery
+        }
         mutex.release()
-        return "I'm fine"
+        return json.dumps(status)
 
     def receive_drone_data(self, t, data):
         if t == CB_MSG:
@@ -211,9 +219,10 @@ class ControllerThread(minidrone.StoppableThread):
         self.last_vicon_update = time.time()
         self.new_changes.release()
 
-    def receive_unity_data(self, translation, rotation):
+    def receive_unity_data(self, translation, rotation, state):
         self.target_translation = translation
         self.target_rotation = rotation
+        self.target_takeoff = state['takeoff']
         self.new_changes.release()
 
     def make_decision(self):
