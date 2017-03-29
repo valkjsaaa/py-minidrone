@@ -230,17 +230,26 @@ class ControllerThread(minidrone.StoppableThread):
         if self.failed:
             return
         if self.state == S_DISCONNECTED:
+            self.state = S_CONNECTING
+            print("Connecting...")
             self.drone.connect()
-        if now - self.last_drone_update > DRONE_TIMEOUT:
-            self.halt()
+        if self.state == S_CONNECTING:
             return
-        if now - self.last_vicon_update > VICON_TIMEOUT:
-            self.halt()
-            return
+        # if now - self.last_drone_update > DRONE_TIMEOUT:
+        #     self.halt()
+        #     return
+        # if now - self.last_vicon_update > VICON_TIMEOUT:
+        #     self.halt()
+        #     return
         if self.state == S_CONNECTED:
-            if self.speed < GROUNDED_SPEED:
+        # if True:
+            if not self.took_off:
+            # if False:
                 if now - self.lifted_time > LIFT_DELAY:
+                    self.took_off = True
                     self.drone.takeoff()
+                    time.sleep(2)
+                    pass
 
             else:
                 if self.drone_tracking:
@@ -267,6 +276,7 @@ class ControllerThread(minidrone.StoppableThread):
 
     def run(self):
         self.viconServerThread.start()
+        self.state = S_CONNECTING
         self.drone.connect()
         while True:
             if not self.stop_event.is_set():
