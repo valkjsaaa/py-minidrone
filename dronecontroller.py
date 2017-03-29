@@ -5,6 +5,9 @@ import minidrone
 import zmq
 import time
 import math
+from pid_controller.pid import PID
+
+MAX_SPEED = 100
 
 mutex = threading.Lock()
 
@@ -153,6 +156,11 @@ class ControllerThread(minidrone.StoppableThread):
         self.last_vicon_update = time.time()
         self.lifted_time = 0
         self.failed = False
+        self.pid_lr = PID(p=100.0, i=30.0, d=10.0)
+        self.pid_fb = PID(p=100.0, i=30.0, d=10.0)
+        self.pid_vertical = PID(p=30.0, i=10.0, d=5.0)
+        self.pid_rotation = PID(p=50.0, i=2.0, d=5.0)
+        self.joy_update = time.time()
 
     def emergency(self):
         print("emergency!")
@@ -223,22 +231,27 @@ class ControllerThread(minidrone.StoppableThread):
                     self.drone.takeoff()
 
             else:
-                angle = angluar_difference(self.drone_rotation, self.target_rotation)
-                if angle > ROTATION_FAILED:
-                    self.emergency()
-                    self.failed = True
-                else:
+                if self.drone_tracking:
                     hor_lr = hor_fb = vertical = 0
-                    rotation_factor = -1
-                    horizontal_factor = -1
-                    vertical_factor = -1
-                    rotation = rotation_factor * (self.target_rotation[0] - self.drone_rotation[0])
-                    if angle < ROTATION_HALT:
-                        hor_lr = horizontal_factor * (self.target_translation[0] - self.drone_translation[0])
-                        hor_fb = horizontal_factor * (self.target_translation[2] - self.drone_translation[2])
-                        vertical = vertical_factor * (self.target_translation[1] - self.drone_translation[1])
-                    print((hor_lr, hor_fb, rotation, vertical))
-                    self.drone.send_joy(hor_lr, hor_fb, rotation, vertical)
+                    angle = angluar_difference(self.drone_rotation, self.target_rotation)
+                    rotation = self.pid_rotation(-angle)
+                    scale = lambda x: math.copysign(math.sqrt(math.fabs(x)), x)
+                    if math.fabs(angle) < ROTATION_HALT:
+                        hor_lr = scale(self.pid_lr(-(self.drone_translation[0] - self.target_translation[0])))
+                        hor_fb = scale(self.pid_fb(-(self.drone_translation[2] - self.target_translation[2])))
+                        vertical = self.pid_vertical(-(self.drone_translation[1] - self.target_translation[1]))
+
+                    clip = lambda x, x_min, x_max: max(x_min, min(x_max, x))
+                    hor_lr = clip(hor_lr, -MAX_SPEED, MAX_SPEED)
+                    hor_fb = clip(hor_fb, -MAX_SPEED, MAX_SPEED)
+                    vertical = clip(vertical, -MAX_SPEED, MAX_SPEED)
+                    rotation = clip(rotation, -MAX_SPEED, MAX_SPEED)
+                    if time.time() - self.joy_update > 0.3:
+                        print((hor_lr, hor_fb, rotation, vertical))
+                        self.drone.send(self.drone.send_joy, int(hor_lr), int(hor_fb), int(rotation), int(vertical))
+                        self.joy_update = time.time()
+                else:
+                    self.drone.send(self.drone.send_joy, 0, 0, 0, -10)
 
     def run(self):
         self.viconServerThread.start()
