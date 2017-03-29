@@ -149,8 +149,8 @@ class ControllerThread(minidrone.StoppableThread):
         self.drone_rotation = (0, 1, 0, 0)
         self.target_translation = (0, 0, 0)
         self.target_rotation = (0, 1, 0, 0)
-        self.last_drone_update = time.clock()
-        self.last_vicon_update = time.clock()
+        self.last_drone_update = time.time()
+        self.last_vicon_update = time.time()
         self.lifted_time = 0
         self.failed = False
 
@@ -189,7 +189,7 @@ class ControllerThread(minidrone.StoppableThread):
             mutex.acquire()
             self.state = S_CONNECTED if data == 'y' else S_DISCONNECTED
             mutex.release()
-        self.last_drone_update = time.clock()
+        self.last_drone_update = time.time()
         self.new_changes.release()
 
     def receive_vicon_data(self, translation, rotation, reset):
@@ -197,7 +197,7 @@ class ControllerThread(minidrone.StoppableThread):
         self.drone_rotation = rotation
         if reset:
             self.failed = False
-        self.last_vicon_update = time.clock()
+        self.last_vicon_update = time.time()
         self.new_changes.release()
 
     def receive_unity_data(self, translation, rotation):
@@ -206,7 +206,7 @@ class ControllerThread(minidrone.StoppableThread):
         self.new_changes.release()
 
     def make_decision(self):
-        now = time.clock()
+        now = time.time()
         if self.failed:
             return
         if self.state == S_DISCONNECTED:
@@ -245,8 +245,8 @@ class ControllerThread(minidrone.StoppableThread):
         self.drone.connect()
         while True:
             if not self.stop_event.is_set():
-                current_time = time.clock()
-                while time.clock() - current_time < LOOP_TIMEOUT:
+                current_time = time.time()
+                while time.time() - current_time < LOOP_TIMEOUT:
                     if self.new_changes.acquire(blocking=False):
                         break
                 self.make_decision()
