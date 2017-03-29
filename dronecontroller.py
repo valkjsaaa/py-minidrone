@@ -64,7 +64,8 @@ class ViconServerThread(minidrone.StoppableThread):
                                 rotation_json['z'],
                                 rotation_json['w'])
                     reset = control_message_json['reset'] == 1
-                    self.process(translation, rotation, reset)
+                    tracking = control_message_json['tracking']
+                    self.process(translation, rotation, reset, tracking)
                 except:
                     self.cleanup()
                 feedback_message = self.feedback()
@@ -152,6 +153,7 @@ class ControllerThread(minidrone.StoppableThread):
         self.drone_rotation = (0, 1, 0, 0)
         self.target_translation = (0, 0, 0)
         self.target_rotation = (0, 1, 0, 0)
+        self.drone_tracking = False
         self.last_drone_update = time.time()
         self.last_vicon_update = time.time()
         self.lifted_time = 0
@@ -200,9 +202,10 @@ class ControllerThread(minidrone.StoppableThread):
         self.last_drone_update = time.time()
         self.new_changes.release()
 
-    def receive_vicon_data(self, translation, rotation, reset):
+    def receive_vicon_data(self, translation, rotation, reset, tracking):
         self.drone_translation = translation
         self.drone_rotation = rotation
+        self.drone_tracking = tracking
         if reset:
             self.failed = False
         self.last_vicon_update = time.time()
