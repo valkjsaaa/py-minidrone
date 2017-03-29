@@ -56,10 +56,10 @@ class ViconServerThread(minidrone.StoppableThread):
                                    translation_json['y'],
                                    translation_json['z'])
                     rotation_json = control_message_json["rotation"]
-                    rotation = (rotation_json['w'],
-                                rotation_json['x'],
+                    rotation = (rotation_json['x'],
                                 rotation_json['y'],
-                                rotation_json['z'])
+                                rotation_json['z'],
+                                rotation_json['w'])
                     reset = control_message_json['reset'] == 1
                     self.process(translation, rotation, reset)
                 except:
@@ -110,12 +110,25 @@ class UnityServerThread(minidrone.StoppableThread):
 
 
 def angluar_difference(quad1, quad2):
-    w1, x1, y1, z1 = quad1
-    w2, x2, y2, z2 = quad2
-    len_quad1 = math.sqrt(x1 ** 2 + y1 ** 2 + z1 ** 2)
-    len_quad2 = math.sqrt(x2 ** 2 + y2 ** 2 + z2 ** 2)
-    dot_product = x1 * x2 + y1 * y2 + z1 * z2
-    return math.acos(dot_product / len_quad1 / len_quad2)
+    quad_diff = add_quaternion(quad1, negate_quaternion(quad2))
+    return quaternion_to_yaw(quad_diff)
+
+
+def negate_quaternion(q):
+    x, y, z, w = q
+    return (-x, -y, -z, w)
+
+
+def add_quaternion(q1, q2):
+    return (q1[3] * q2[0] + q1[0] * q2[3] + q1[1] * q2[2] - q1[2] * q2[1],
+            q1[3] * q2[1] - q1[0] * q2[2] + q1[1] * q2[3] + q1[2] * q2[0],
+            q1[3] * q2[2] + q1[0] * q2[1] - q1[1] * q2[0] + q1[2] * q2[3],
+            q1[3] * q2[3] - q1[0] * q2[0] - q1[1] * q2[1] - q1[2] * q2[2])
+
+
+def quaternion_to_yaw(q):
+    x, y, z, w = q
+    return math.atan2(2 * y * w - 2 * x * z, 1 - 2 * y * y - 2 * z * z)
 
 
 class ControllerThread(minidrone.StoppableThread):
