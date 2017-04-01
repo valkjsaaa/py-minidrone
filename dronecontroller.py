@@ -134,6 +134,15 @@ def add_quaternion(q1, q2):
             q1[3] * q2[3] - q1[0] * q2[0] - q1[1] * q2[1] - q1[2] * q2[2])
 
 
+def quaternion_to_roll(q):
+    x, y, z, w = q
+    return math.asin(2 * x * y + 2 * z * w)
+
+def quaternion_to_pitch(q):
+    x, y, z, w = q
+    return math.atan2(2 * x * w - 2 * y * z, 1 - 2 * x * x - 2 * z * z)
+
+
 def quaternion_to_yaw(q):
     x, y, z, w = q
     return math.atan2(2 * y * w - 2 * x * z, 1 - 2 * y * y - 2 * z * z)
@@ -164,15 +173,20 @@ class ControllerThread(minidrone.StoppableThread):
         self.lifted_time = 0
         self.failed = False
         self.took_off = False
-        self.pid_lr = PID(p=100.0, i=30.0, d=10.0)
-        self.pid_fb = PID(p=100.0, i=30.0, d=10.0)
-        self.pid_vertical = PID(p=30.0, i=10.0, d=5.0)
-        self.pid_rotation = PID(p=50.0, i=2.0, d=5.0)
+        self.pid_lr = PID(p=300.0, i=500.0, d=100.0)
+        self.pid_fb = PID(p=300.0, i=500.0, d=100.0)
+        self.pid_vertical = PID(p=70.0, i=10.0, d=0.0)
+        self.pid_rotation = PID(p=200.0, i=0.0, d=50.0)
         self.joy_update = time.time()
 
     def emergency(self):
         print("emergency!")
         self.drone.emergency()
+
+    def crash(self):
+        self.failed = True
+        print("crash!")
+        self.drone.land()
 
     def halt(self):
         print("halted!")
@@ -254,9 +268,12 @@ class ControllerThread(minidrone.StoppableThread):
             else:
                 if self.drone_tracking:
                     if time.time() - self.joy_update > 0.3:
-                        hor_lr = hor_fb = vertical = 0
+                        roll = quaternion_to_roll(self.drone_rotation)
+                        yaw = quaternion_to_yaw(self.drone_rotation)
+                        if math.fabs(roll) > ROTATION_FAILED or math.fabs(yaw) > ROTATION_FAILED:
+                            self.crash()
+                            return
                         angle = angluar_difference(self.drone_rotation, self.target_rotation)
-                        rotation = self.pid_rotation(-angle)
 
                         def scale(x):
                             return math.copysign(math.sqrt(math.fabs(x)), x)
@@ -264,17 +281,26 @@ class ControllerThread(minidrone.StoppableThread):
                         def clip(x, x_min, x_max):
                             return max(x_min, min(x_max, x))
 
-                        if math.fabs(angle) < ROTATION_HALT:
-                            hor_lr = scale(self.pid_lr(-(self.drone_translation[0] - self.target_translation[0])))
-                            hor_fb = scale(self.pid_fb(-(self.drone_translation[2] - self.target_translation[2])))
-                            vertical = self.pid_vertical(-(self.drone_translation[1] - self.target_translation[1]))
+                        trans_angle = quaternion_to_yaw(self.drone_rotation)
+                        diff_x = (self.drone_translation[0] - self.target_translation[0])
+                        diff_z = (self.drone_translation[2] - self.target_translation[2])
+                        pos_lr = diff_x * math.cos(trans_angle) - diff_z * math.sin(trans_angle)
+                        pos_fb = diff_z * math.cos(trans_angle) + diff_x * math.sin(trans_angle)
+                        hor_lr = scale(self.pid_lr(-pos_lr)) - 5
+                        hor_fb = scale(self.pid_fb(-pos_fb)) + 10
+                        rotation = scale(self.pid_rotation(-angle))
+                        vertical = self.pid_vertical(-(self.drone_translation[1] - self.target_translation[1]))
 
                         hor_lr = clip(hor_lr, -MAX_SPEED, MAX_SPEED)
                         hor_fb = clip(hor_fb, -MAX_SPEED, MAX_SPEED)
                         vertical = clip(vertical, -MAX_SPEED, MAX_SPEED)
                         rotation = clip(rotation, -MAX_SPEED, MAX_SPEED)
+                        print(self.drone_rotation)
+                        print(self.drone_translation)
                         print(hor_lr, hor_fb, rotation, vertical)
-                        self.drone.send(self.drone.send_joy, int(hor_lr), int(hor_fb), int(rotation), int(vertical))
+                        if not OFFLINE_DEBUG:
+                            self.drone.send(self.drone.send_joy_fast, int(hor_lr), int(hor_fb), int(rotation),
+                                        int(vertical))
                         self.joy_update = time.time()
                 else:
                     self.drone.send(self.drone.send_joy, 0, 0, 0, -10)
