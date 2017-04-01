@@ -17,20 +17,23 @@ P_MAC = '^([0-9A-F]{2}:){5}([0-9A-F]{2})$'
 P_MAC_END = '(:[0-9A-F]{2}){3}'
 P_OUIS = ['{0}{1}'.format(oui, P_MAC_END) for oui in PARROT_OUIS]
 
+lock = threading.Lock()  # need to add this to r/w
 
-lock = threading.Lock() # need to add this to r/w
 
 class S:
-    Disconnected, Init, Connected, Error = range(4)
-    
+    Disconnected, Init, Connected, Error = list(range(4))
+
+
 class Base:
-    FlatTrim, TakeOff, Land = range(3)
+    FlatTrim, TakeOff, Land = list(range(3))
+
 
 class Cmd:
     def __init__(self, handle, value, response=False):
         self.handle = handle
         self.value = value
         self.response = response
+
 
 class StoppableThread(threading.Thread):
     def __init__(self):
@@ -41,19 +44,22 @@ class StoppableThread(threading.Thread):
         if self.isAlive():
             self.stop_event.set()
 
+
 class ReaderThread(StoppableThread):
     def __init__(self, drone, pexp):
         StoppableThread.__init__(self)
         self.drone = drone
         self.reader = pexp
-        
+
     def run(self):
-        patterns = self.reader.compile_pattern_list([dronedict.P_NOTIFICATION, dronedict.P_BATTERY, dronedict.P_CONNECTED, pexpect.TIMEOUT, pexpect.EOF])
+        patterns = self.reader.compile_pattern_list(
+            [dronedict.P_NOTIFICATION, dronedict.P_BATTERY, dronedict.P_CONNECTED, pexpect.TIMEOUT, pexpect.EOF])
         while True:
             if not self.stop_event.is_set():
                 index = self.reader.expect_list(patterns, timeout=30)
                 if index == 0:
-                    self.drone.send(self.drone.send_ack, self.reader.after.split(' ')[3])
+                    # self.drone.send(self.drone.send_ack, self.reader.after.split(' ')[3])
+                    self.drone.send_ack(self.reader.after.split(' ')[3])
                     dronedict.process_notification(self.drone, self.reader.after)
                 elif index == 1:
                     dronedict.process_battery(self.drone, self.reader.after)
@@ -66,8 +72,8 @@ class ReaderThread(StoppableThread):
                 self.reader.terminate(True)
                 break
 
-class WriterThread(StoppableThread):
 
+class WriterThread(StoppableThread):
     def __init__(self, drone):
         StoppableThread.__init__(self)
         self.drone = drone
@@ -97,8 +103,8 @@ class WriterThread(StoppableThread):
                     self.gatt.sendline(" ".join(["char-write-req", cmd.handle, cmd.value]))
                 self.drone.q.task_done()
 
-class MiniDrone(object):
 
+class MiniDrone(object):
     def __init__(self, mac=None, callback=None):
         self.mac = mac
         self.callback = callback
@@ -106,9 +112,9 @@ class MiniDrone(object):
         if req_missing:
             self.cb(0, req_missing)
             return
-        self.seq_joy = 1 # 0x0040
-        self.seq_ref = 0 # 0x0043
-        self.timer_t = 0.3
+        self.seq_joy = 1  # 0x0040
+        self.seq_ref = 0  # 0x0043
+        self.timer_t = 0.5
         self.settings = dict()
         self.speed = 30
         self.status = S.Disconnected
@@ -154,15 +160,15 @@ class MiniDrone(object):
             self.t_writer.join()
         self.cb(0, "Connection closed.")
         self.status = S.Disconnected
-    
+
     def connect(self):
         self.cb(0, "Connecting to drone...")
         self.t_writer.start()
         self.low_level('connect', '')
-        time.sleep(1)
+        time.sleep(4)
         self.status = S.Init
         self.send(self.send_init)
-    
+
     def disconnect(self):
         self.cb(0, "Disconnecting...")
         self.low_level('disconnect', '')
@@ -192,6 +198,7 @@ class MiniDrone(object):
         self.send(self.send_joy, -self.speed, 0, 0, 0)
 
     def still(self):
+        print('still')
         self.send(self.send_joy, 0, 0, 0, 0)
 
     def incr_speed(self):
@@ -224,7 +231,7 @@ class MiniDrone(object):
     def setup_time(self):
         times = time_bin()
         for i in range(1, 3):
-            self.send_ref('0004' + ('%02x' % i) + '00' + times[i-1] + '00')
+            self.send_ref('0004' + ('%02x' % i) + '00' + times[i - 1] + '00')
 
     def wheels(self, wheels):
         self.send_ref('02010200' + ('01' if wheels else '00'))
@@ -285,6 +292,7 @@ class MiniDrone(object):
         self.low_level(handle, value)
 
     def send(self, cmd, *args, **kwargs):
+        print("sending: " + cmd.__name__)
         self.wd_timer.cancel()
         cmd(*args, **kwargs)
         self.wd_timer = threading.Timer(self.timer_t, self.still)
@@ -293,18 +301,23 @@ class MiniDrone(object):
     def low_level(self, handle, value, response=False):
         self.q.put(Cmd(handle, value, response))
 
-def sq2b(seq): # we need the last 8 bits only
+
+def sq2b(seq):  # we need the last 8 bits only
     return '%02x' % (seq & 0b0000000011111111)
 
-def sp2b(speed): # 0-100
+
+def sp2b(speed):  # 0-100
     return '%02x' % (speed & 0b11111111)
+
 
 def time_bin():
     return [binascii.hexlify(t) for t in time.strftime("%Y-%m-%d|T%H%M%S%z", time.localtime()).split('|')]
 
+
 def merge_moves(hor_lr, hor_fb, rot, vert):
     t = '01' if (hor_lr != 0 or hor_fb != 0) else '00'
     return t + sp2b(hor_lr) + sp2b(hor_fb) + sp2b(rot) + sp2b(vert)
+
 
 def config_value(type, seq, value):
     result = "04" + seq
