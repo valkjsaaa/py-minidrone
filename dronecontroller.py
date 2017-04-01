@@ -253,22 +253,27 @@ class ControllerThread(minidrone.StoppableThread):
 
             else:
                 if self.drone_tracking:
-                    hor_lr = hor_fb = vertical = 0
-                    angle = angluar_difference(self.drone_rotation, self.target_rotation)
-                    rotation = self.pid_rotation(-angle)
-                    scale = lambda x: math.copysign(math.sqrt(math.fabs(x)), x)
-                    if math.fabs(angle) < ROTATION_HALT:
-                        hor_lr = scale(self.pid_lr(-(self.drone_translation[0] - self.target_translation[0])))
-                        hor_fb = scale(self.pid_fb(-(self.drone_translation[2] - self.target_translation[2])))
-                        vertical = self.pid_vertical(-(self.drone_translation[1] - self.target_translation[1]))
-
-                    clip = lambda x, x_min, x_max: max(x_min, min(x_max, x))
-                    hor_lr = clip(hor_lr, -MAX_SPEED, MAX_SPEED)
-                    hor_fb = clip(hor_fb, -MAX_SPEED, MAX_SPEED)
-                    vertical = clip(vertical, -MAX_SPEED, MAX_SPEED)
-                    rotation = clip(rotation, -MAX_SPEED, MAX_SPEED)
                     if time.time() - self.joy_update > 0.3:
-                        print((hor_lr, hor_fb, rotation, vertical))
+                        hor_lr = hor_fb = vertical = 0
+                        angle = angluar_difference(self.drone_rotation, self.target_rotation)
+                        rotation = self.pid_rotation(-angle)
+
+                        def scale(x):
+                            return math.copysign(math.sqrt(math.fabs(x)), x)
+
+                        def clip(x, x_min, x_max):
+                            return max(x_min, min(x_max, x))
+
+                        if math.fabs(angle) < ROTATION_HALT:
+                            hor_lr = scale(self.pid_lr(-(self.drone_translation[0] - self.target_translation[0])))
+                            hor_fb = scale(self.pid_fb(-(self.drone_translation[2] - self.target_translation[2])))
+                            vertical = self.pid_vertical(-(self.drone_translation[1] - self.target_translation[1]))
+
+                        hor_lr = clip(hor_lr, -MAX_SPEED, MAX_SPEED)
+                        hor_fb = clip(hor_fb, -MAX_SPEED, MAX_SPEED)
+                        vertical = clip(vertical, -MAX_SPEED, MAX_SPEED)
+                        rotation = clip(rotation, -MAX_SPEED, MAX_SPEED)
+                        print(hor_lr, hor_fb, rotation, vertical)
                         self.drone.send(self.drone.send_joy, int(hor_lr), int(hor_fb), int(rotation), int(vertical))
                         self.joy_update = time.time()
                 else:
