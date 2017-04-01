@@ -7,6 +7,8 @@ import time
 import math
 from pid_controller.pid import PID
 
+OFFLINE_DEBUG = True
+
 MAX_SPEED = 100
 
 mutex = threading.Lock()
@@ -241,13 +243,13 @@ class ControllerThread(minidrone.StoppableThread):
 
     def make_decision(self):
         now = time.time()
-        if self.failed:
+        if self.failed and not OFFLINE_DEBUG:
             return
-        if self.state == S_DISCONNECTED:
+        if self.state == S_DISCONNECTED and not OFFLINE_DEBUG:
             self.state = S_CONNECTING
             print("Connecting...")
             self.drone.connect()
-        if self.state == S_CONNECTING:
+        if self.state == S_CONNECTING and not OFFLINE_DEBUG:
             return
         # if now - self.last_drone_update > DRONE_TIMEOUT:
         #     self.halt()
@@ -255,19 +257,19 @@ class ControllerThread(minidrone.StoppableThread):
         # if now - self.last_vicon_update > VICON_TIMEOUT:
         #     self.halt()
         #     return
-        if self.state == S_CONNECTED:
+        if self.state == S_CONNECTED or OFFLINE_DEBUG:
         # if True:
-            if not self.took_off:
+            if not self.took_off and not OFFLINE_DEBUG:
             # if False:
                 if now - self.lifted_time > LIFT_DELAY:
                     self.took_off = True
                     self.drone.takeoff()
-                    time.sleep(2)
+                    time.sleep(1)
                     pass
 
             else:
-                if self.drone_tracking:
-                    if time.time() - self.joy_update > 0.3:
+                if self.drone_tracking or OFFLINE_DEBUG:
+                    if time.time() - self.joy_update > 0.1:
                         roll = quaternion_to_roll(self.drone_rotation)
                         yaw = quaternion_to_yaw(self.drone_rotation)
                         if math.fabs(roll) > ROTATION_FAILED or math.fabs(yaw) > ROTATION_FAILED:
