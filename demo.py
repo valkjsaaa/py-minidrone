@@ -1,8 +1,12 @@
 #!/usr/bin/env python
+from __future__ import print_function
 
 import curses
 import time
 import threading
+
+import sys
+
 import minidrone
 import dronedict
 
@@ -13,7 +17,7 @@ S_DISCONNECTED = 0
 S_CONNECTING = 1
 S_CONNECTED = 2
 
-DRONEMAC = 'E0:14:D6:A9:3D:28'
+DRONEMAC = 'E0:14:1E:C2:3D:47'
 CB_MSG = 0
 CB_BATTERY = 1
 CB_DATA_UPDATE = 2
@@ -27,6 +31,7 @@ def refresh_data(t, data):
     if t == CB_MSG:
         mutex.acquire()
         message = data
+        print(message, file=sys.stderr)
         mutex.release()
     elif t == CB_BATTERY:
         mutex.acquire()
@@ -43,6 +48,7 @@ def refresh_data(t, data):
     elif t == CB_STATE:
         mutex.acquire()
         state = S_CONNECTED if data == 'y' else S_DISCONNECTED
+        print("State: %d" % state, file=sys.stderr)
         mutex.release()
 
 def draw_joy(win):

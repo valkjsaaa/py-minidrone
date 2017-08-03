@@ -80,12 +80,16 @@ class WriterThread(StoppableThread):
         self.gatt = pexpect.spawn(drone.gatttool_path + ' -b ' + drone.mac + ' -I -t random', echo=False)
         self.t_reader = ReaderThread(drone, self.gatt)
         self.t_reader.daemon = True
+        self.write_lock = threading.Lock()
+        self.write_lock.acquire()
 
     def run(self):
         self.t_reader.start()
+        self.write_lock.release()
         while True:
             if self.stop_event.is_set() and self.drone.q.empty():
                 self.drone.q.join()
+                self.write_lock.acquire()
                 self.gatt.sendeof()
                 self.gatt.terminate(True)
                 self.t_reader.stop()
@@ -94,14 +98,28 @@ class WriterThread(StoppableThread):
             else:
                 cmd = self.drone.q.get()
                 if "connect" in cmd.handle:
+                    self.write_lock.acquire()
                     self.gatt.sendline(cmd.handle)
+                    self.write_lock.release()
                     self.drone.q.task_done()
                     continue
+                self.write_lock.acquire()
                 if not cmd.response:
+                    print("sent")
                     self.gatt.sendline(" ".join(["char-write-cmd", cmd.handle, cmd.value]))
                 else:
                     self.gatt.sendline(" ".join(["char-write-req", cmd.handle, cmd.value]))
+                self.write_lock.release()
                 self.drone.q.task_done()
+
+    def fast_write(self, cmd):
+        self.write_lock.acquire()
+        if not cmd.response:
+            print("sent")
+            self.gatt.sendline(" ".join(["char-write-cmd", cmd.handle, cmd.value]))
+        else:
+            self.gatt.sendline(" ".join(["char-write-req", cmd.handle, cmd.value]))
+        self.write_lock.release()
 
 
 class MiniDrone(object):
@@ -247,6 +265,16 @@ class MiniDrone(object):
                 merge_moves(hor_lr, hor_fb, rot, vert) + \
                 '00000000'
         self.low_level(handle, value)
+        self.seq_joy += 1
+
+    def send_joy_fast(self, hor_lr, hor_fb, rot, vert):
+        handle = '0x0040'
+        value = '02' + \
+                sq2b(self.seq_joy) + \
+                '02000200' + \
+                merge_moves(hor_lr, hor_fb, rot, vert) + \
+                '00000000'
+        self.t_writer.fast_write(Cmd(handle, value, response=False))
         self.seq_joy += 1
 
     def send_ref(self, t, emergency=False):

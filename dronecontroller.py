@@ -1,10 +1,15 @@
 #!/usr/bin/env python
 import json
 import threading
+
+from flask import Flask
+import eventlet
+
 import minidrone
 import zmq
 import time
 import math
+import socketio
 from pid_controller.pid import PID
 
 OFFLINE_DEBUG = True
@@ -31,7 +36,7 @@ LOOP_TIMEOUT = 0.05
 LIFT_DELAY = 3
 
 ROTATION_HALT = 0.4
-ROTATION_FAILED = 1.0
+ROTATION_FAILED = 4.0
 
 GROUNDED_SPEED = 10
 
@@ -77,46 +82,60 @@ class ViconServerThread(minidrone.StoppableThread):
                 socket.close()
                 break
 
+sio = socketio.Server()
+app = Flask(__name__)
 
-class UnityServerThread(minidrone.StoppableThread):
-    def __init__(self, context, process, feedback, cleanup):
-        minidrone.StoppableThread.__init__(self)
-        self.context = context
-        self.process = process
-        self.feedback = feedback
-        self.cleanup = cleanup
+@app.route('/')
+def index():
+    """Serve the client-side application."""
+    return "Hello"
 
-    def run(self):
-        socket = self.context.socket(zmq.REP)
-        socket.bind(UNITY_SERVER_SOCKET)
-        while True:
-            if not self.stop_event.is_set():
-                control_message = socket.recv()
-                control_message_json = json.loads(control_message)
-                # noinspection PyBroadException
-                try:
-                    translation_json = control_message_json["translation"]
-                    translation = (translation_json['x'],
-                                   translation_json['y'],
-                                   translation_json['z'])
-                    rotation_json = control_message_json["rotation"]
-                    rotation = (rotation_json['w'],
-                                rotation_json['x'],
-                                rotation_json['y'],
-                                rotation_json['z'])
-                    state_json = control_message_json['state']
-                    state = {
-                        'takeoff': state_json['takeoff']
-                    }
-                    self.process(translation, rotation, state)
-                except:
-                    self.cleanup()
-                feedback_message = self.feedback()
-                socket.send(feedback_message)
+@sio.on('connect')
+def connect(sid, environ):
+    print("connect ", sid)
 
-            else:
-                socket.close()
-                break
+@sio.on('command')
+def message(sid, data):
+    print("message ", data)
+# class UnityServerThread(minidrone.StoppableThread):
+#     def __init__(self, context, process, feedback, cleanup):
+#         minidrone.StoppableThread.__init__(self)
+#         self.context = context
+#         self.process = process
+#         self.feedback = feedback
+#         self.cleanup = cleanup
+#
+#     def run(self):
+#         socket = self.context.socket(zmq.REP)
+#         socket.bind(UNITY_SERVER_SOCKET)
+#         while True:
+#             if not self.stop_event.is_set():
+#                 control_message = socket.recv()
+#                 control_message_json = json.loads(control_message)
+#                 # noinspection PyBroadException
+#                 try:
+#                     translation_json = control_message_json["translation"]
+#                     translation = (translation_json['x'],
+#                                    translation_json['y'],
+#                                    translation_json['z'])
+#                     rotation_json = control_message_json["rotation"]
+#                     rotation = (rotation_json['w'],
+#                                 rotation_json['x'],
+#                                 rotation_json['y'],
+#                                 rotation_json['z'])
+#                     state_json = control_message_json['state']
+#                     state = {
+#                         'takeoff': state_json['takeoff']
+#                     }
+#                     self.process(translation, rotation, state)
+#                 except:
+#                     self.cleanup()
+#                 # feedback_message = self.feedback()
+#                 # socket.send(feedback_message)
+#
+#             else:
+#                 socket.close()
+#                 break
 
 
 def angluar_difference(quad1, quad2):
@@ -157,8 +176,8 @@ class ControllerThread(minidrone.StoppableThread):
         self.new_changes = threading.Semaphore(0)
         self.viconServerThread = \
             ViconServerThread(self.zmqContext, self.receive_vicon_data, self.status_report, self.halt)
-        self.unityServerThread = \
-            UnityServerThread(self.zmqContext, self.receive_unity_data, self.status_report, self.halt)
+        # self.unityServerThread = \
+        #     UnityServerThread(self.zmqContext, self.receive_unity_data, self.status_report, self.halt)
         self.drone = minidrone.MiniDrone(mac=DRONE_MAC, callback=self.receive_drone_data)
         self.state = S_DISCONNECTED
         self.message = self.battery = ''
@@ -168,13 +187,17 @@ class ControllerThread(minidrone.StoppableThread):
         self.drone_rotation = (0, 0, 0, 1)
         self.drone_tracking = False
         self.target_translation = (0.0, 1.5, 0.0)
-        self.target_rotation = (0, 0, 0, 1)
+        self.target_rotation = (0, 0.707, 0, 0.707)
         self.target_takeoff = True
         self.last_drone_update = time.time()
         self.last_vicon_update = time.time()
         self.lifted_time = 0
         self.failed = False
         self.took_off = False
+        # self.pid_lr = PID(p=500.0, i=100.0, d=100.0)
+        # self.pid_fb = PID(p=500.0, i=100.0, d=100.0)
+        # self.pid_vertical = PID(p=70.0, i=10.0, d=0.0)
+        # self.pid_rotation = PID(p=400.0, i=10.0, d=0.0)
         self.pid_lr = PID(p=300.0, i=500.0, d=100.0)
         self.pid_fb = PID(p=300.0, i=500.0, d=100.0)
         self.pid_vertical = PID(p=70.0, i=10.0, d=0.0)
@@ -206,6 +229,7 @@ class ControllerThread(minidrone.StoppableThread):
         if t == CB_MSG:
             mutex.acquire()
             self.message = data
+            print(self.message)
             mutex.release()
         elif t == CB_BATTERY:
             mutex.acquire()
@@ -222,6 +246,7 @@ class ControllerThread(minidrone.StoppableThread):
         elif t == CB_STATE:
             mutex.acquire()
             self.state = S_CONNECTED if data == 'y' else S_DISCONNECTED
+            print("State: %d" % self.state)
             mutex.release()
         self.last_drone_update = time.time()
         self.new_changes.release()
@@ -239,6 +264,7 @@ class ControllerThread(minidrone.StoppableThread):
         self.target_translation = translation
         self.target_rotation = rotation
         self.target_takeoff = state['takeoff']
+        print(self.target_translation)
         self.new_changes.release()
 
     def make_decision(self):
@@ -309,6 +335,8 @@ class ControllerThread(minidrone.StoppableThread):
 
     def run(self):
         self.viconServerThread.start()
+        # self.unityServerThread.start()
+        threading._sleep(2)
         self.state = S_CONNECTING
         self.drone.connect()
         while True:
@@ -326,6 +354,11 @@ class ControllerThread(minidrone.StoppableThread):
 
 
 if __name__ == '__main__':
+    # wrap Flask application with engineio's middleware
+    app = socketio.Middleware(sio, app)
+
+    # deploy as an eventlet WSGI server
+    eventlet.wsgi.server(eventlet.listen(('', 4567)), app)
     mainThread = ControllerThread()
     mainThread.start()
     mainThread.join()
